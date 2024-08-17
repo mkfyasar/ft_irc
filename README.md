@@ -142,3 +142,45 @@ if(bind(sockFd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0){
 
     int clientFd = accept(socket_fd, (struct sockaddr *)&client_addr, &client_len);
     ```
+
+### Fcntl Fonksiyonu
+- File control kelimelerinin kisaltmasidir.
+- File descriptorslerin cesitli ozelliklerini degistirmek ve sorgulamak icin kullanilir.
+- Socketlerde birer file descriptors olduklari icin soketler ustundede kullanabiliriz.
+  
+```cpp
+    int fcntl(int fd, int cmd, ... /* arg */);
+```
+- Bu fonksiyonu olusturdugumuz soketi bloklanamayan moda almak icin kullaniyoruz.
+- Normal modda recv() cagrisi veri gelene kadar bekler ve programi bloklar bunun onune gecmek icin bloklanamayan moda aliyoruz bu sayede eger veri yoksa recv() hemen -1 doner buda bizim birden cok baglantiyi yapabilmemize olanak saglar.
+  
+```cpp
+    int flags = fcntl(socketFd, F_GETFL, 0); //F_GETFL su anda mevcut lan bayraklari alir
+    flags |= O_NONBLOCK; // |= operatoru ile bayraklara O_NONBLOCK bayragini ekler
+    fcntl(socketFd, F_SETFL, flags); // sonrada yeni bayrak degerimiz ayarlanr.
+```
+- Bu projemizin, sunucu ayni anda birden fazla istemciyi idare edebilme ve asla takilmamasi gereksinimlerini karsilamamiza yardimci olur.
+
+### Poll Fonksiyonu
+- Birden fazla file description es zamanli izlemek icin kullanilir.
+- I/O olaylarini bekler ve hangi file descriptionlarin okumaya veya yazmaya hazir oldugunu bildirir.
+  
+```cpp
+    int poll(struct pollfd *fds, nfds_t nfds, int timeout);
+```
+1. `fds`: pollfd yapilarinin bir dizisi.
+2. `nfds`: fds dizisindeki oge sayisi.
+3. `timeout`: milisaniye cinsinden zaman asim degeri. -1 sonsuza kadar bekler- 0 aninda doner.
+
+```cpp
+//pollfd yapisi
+    struct pollfd{
+        int fd; // dosya tanimlayicisi
+        short events; // istenilen olaylar
+        short revents; // gerceklesen olaylar
+    };
+```
+- #### Olaylar
+    - `POLLIN:` Okumak icin veri var.
+    - `POLLOUT:` Yazmak icin hazir.
+    - `POLLERR:` Hata Olustu.
