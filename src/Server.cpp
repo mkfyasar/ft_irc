@@ -10,8 +10,24 @@ Server::~Server() {
     std::cout << "Server Destructor Called!" << std::endl;
 }
 
+
+void Server::initialize(){
+    initSocket();
+    setPollFd();
+}
+
+void Server::clientPrintInfo(struct sockaddr_in* clientAddr){
+    char ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(clientAddr->sin_addr),ip, INET_ADDRSTRLEN);
+    int port = ntohs(clientAddr->sin_port);
+
+    printf("Client Ip: %s\n", ip);
+    printf("Client Port = %d\n", port);
+}
+
 void Server::initSocket(){
     //1. Socket Olusturma
+    
     int socketFd = socket(AF_INET, SOCK_STREAM, 0);
     if(socketFd == -1){
         std::cerr << "Socket Created Failed!" << std::endl;
@@ -36,14 +52,13 @@ void Server::initSocket(){
         std::cerr << "Bind Failed!" << std::endl;
         return;
     }
-
+    _serverSocket = socketFd;
     //4.Socketi Dinleme Moduna Alma
     if(listen(socketFd,10) < 0){
         std::cerr << "Listen Failed" << std::endl;
         close(socketFd);
         return;
     }
-    _serverSocket = socketFd;
     //5.Soketi Bloklanamayan Moda alma
     int flags = fcntl(socketFd, F_GETFL, 0);
     flags |= O_NONBLOCK;
@@ -58,7 +73,6 @@ void Server::setPollFd(){
     pollfd serverPollFd;
     serverPollFd.fd = _serverSocket;
     serverPollFd.events = POLLIN;
-    serverPollFd.revents = 0;
 
     fds.push_back(serverPollFd);
 }
@@ -67,8 +81,47 @@ void Server::setPollFd(){
 void Server::acceptConnection(){
     struct sockaddr_in clientAddr;
     socklen_t clientAddrLen = sizeof(clientAddr);
-
+   
+    // Yeni Baglanti Kabul Etme
+    int clientSocket = accept(_serverSocket, (struct sockaddr*)&clientAddr, &clientAddrLen);
+    clientPrintInfo(&clientAddr);
+    if(clientSocket == -1){
+        if(errno != EWOULDBLOCK && errno != EAGAIN){
+            std::cerr << "Error Accepting Connection "  << std::endl;
+        }
+        return;
+    }
     
+    pollfd newClient;
+    newClient.fd = clientSocket;
+    newClient.events = POLLIN;
+    fds.push_back(newClient);
+
+    std::cout << "New Connection Accepted. Socket: " << clientSocket << std::endl;
+}
+
+
+void Server::handleClientMessage(int clientSocket){
+    char buffer[1024];
+    ssize_t bytesRead;
+    printf("Handle Client Meaage\n");
+    memset(buffer, 0, sizeof(buffer));
+    bytesRead = read(clientSocket, buffer, sizeof(buffer) - 1);
+    printf("Bytes Read = %ld\n", bytesRead);
+
+    if(bytesRead > 0) {
+        write(clientSocket, buffer, bytesRead);
+    }
+    else if (bytesRead == 0){
+        printf("Baglanti Kapandi\n");
+        close(clientSocket);
+        //vectordeki socket silinecek;
+    }
+    else{
+        printf("Hata Durumu\n");
+        close(clientSocket);
+        //vectordeki socket silinecek;
+    }
 }
 
 
@@ -76,26 +129,28 @@ void Server::acceptConnection(){
 
 
 
-
-
-
 void Server::run(){
-    setPollFd();
+    
 
     while (true){
         int ready = poll(fds.data(),fds.size(), -1);
+
         if(ready == -1){
             std::cerr << "Poll Failed!" << std::endl;
             continue;
         }
+        
 
+        
         for (size_t i = 0; i < fds.size(); ++i) {
+           
+
             if (fds[i].revents & POLLIN) {
                 if (fds[i].fd == _serverSocket) {
-                    // yeni baglanti kabul edecgiz
+                    acceptConnection();
                 } else {
-                    // istemciden gelen veriler.
-
+                    printf("Istemciden Gelen Veriler:\n");
+                    handleClientMessage(fds[i].fd);
                 } 
             }
         }

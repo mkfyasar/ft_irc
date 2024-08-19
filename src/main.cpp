@@ -1,5 +1,5 @@
 #include "../include/Server.hpp"
-
+#define serverIsRunning 1
 
 int main(int argc, char **argv){
 
@@ -8,6 +8,7 @@ int main(int argc, char **argv){
         return 1;
     }
     
-    Server deneme(atoi(argv[0]),argv[2]);
-    deneme.run();
+    Server server(atoi(argv[1]),argv[2]);
+    server.initialize();
+    server.run();    
 }

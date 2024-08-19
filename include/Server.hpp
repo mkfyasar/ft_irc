@@ -13,7 +13,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
-
+#include <cerrno>
 class Server {
 
     private:
@@ -26,8 +26,8 @@ class Server {
         Server(int port, const  std::string& password);
         ~Server();
         void run();
-
-    
+        void initialize();
+        void clientPrintInfo(struct sockaddr_in* clientAddr);
     private:
         void initSocket();
         void setPollFd();
