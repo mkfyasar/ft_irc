@@ -1,7 +1,7 @@
 NAME = ircserv
 CXX = c++
 CXXFLAGS =
-SRCS = src/main.cpp src/Server.cpp src/Client.cpp
+SRCS = src/main.cpp src/Server.cpp src/Client.cpp src/SignalHandler.cpp
 OBJS = $(SRCS:src/%.cpp=obj/%.o)
 INCLUDES = -Iinclude
 

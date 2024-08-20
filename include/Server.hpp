@@ -1,7 +1,9 @@
 #ifndef SERVER_HPP
 #define SERVER_HPP
 
-#include "Client.hpp"
+#include "../include/SignalHandler.hpp"
+#include "../include/Client.hpp"
+
 #include <string>
 #include <vector>
 #include <map>
@@ -33,6 +35,7 @@ class Server {
         void run();
         void initialize();
         void clientPrintInfo(struct sockaddr_in* clientAddr, int clientSocket);
+
     private:
         void initSocket();
         void setPollFd();
@@ -47,7 +50,14 @@ class Server {
         void acceptConnection();
         void handleClientMessage(int clientSocket);
         void closeConnection(int clientSocket);
-        
+
+        //Authenticate
+        bool authClient(int clientSocket);
+        bool verifyPassword(const std::string& password);
+
+        //Message
+        void sendMessage(int clientSocket, const std::string& msg);
+        std::string receiveMessage(int clientSocket);
 };
 
 #endif

@@ -1,7 +1,6 @@
 #include "../include/Server.hpp"
 #include <sstream>
 
-
 Server::Server(int port, const std::string& password) 
     :_portNumber(port), _password(password) {
     std::cout << "Server Constructer Called!" << std::endl;
@@ -11,9 +10,48 @@ Server::~Server() {
     std::cout << "Server Destructor Called!" << std::endl;
 }
 
+bool Server::authClient(int clientSocket){
+    
+    sendMessage(clientSocket, "PASS: Enter a password\r\n");
+
+    std::string receivedPass = receiveMessage(clientSocket);
+    if(receivedPass.empty()){
+        return false;
+    }
+
+    if(verifyPassword(receivedPass)){
+        _clients[clientSocket].setAuth(true);
+        sendMessage(clientSocket, "Welcome to the IRC server\r\n");
+        return true;
+    } else {
+        sendMessage(clientSocket, "Invalid Password. Connection Closed!\r\n");
+        return false;
+    }
+    
+    
+    
+    
+}
+
+bool Server::verifyPassword(const std::string& password){
+    return _password == password;
+}
+
+void Server::sendMessage(int clientSocket, const std::string& msg){
+    send(clientSocket, msg.c_str(), msg.length(), 0);
+}
+
+std::string Server::receiveMessage(int clientSocket){
+    char buffer[1024];
+    ssize_t byteRead = recv(clientSocket, buffer, sizeof(buffer) -1, 0);
+
+    if(byteRead <= 0)
+        return "";
+    buffer[byteRead] = '\0';
+    return std::string(buffer);
+}
 
 void Server::createSocket(){
-
     //1. Socket Olusturma
      _serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if(_serverSocket == -1){
@@ -40,7 +78,8 @@ void Server::bindSocket(){
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     if(bind(_serverSocket, (const sockaddr*)&server_addr, sizeof(server_addr)) < 0){
-        std::cerr << "Bind Failed!" << std::endl;
+        std::cerr << "Bind Failed! Maybe port is aldreay use broo" << std::endl;
+        exit(1);
         return;
     }
 }
@@ -54,7 +93,6 @@ void Server::listenMode(){
     }
 }
 
-
 void Server::setNonBlocking(){
     //5.Soketi Bloklanamayan Moda alma
     int flags = fcntl(_serverSocket, F_GETFL, 0);
@@ -64,10 +102,6 @@ void Server::setNonBlocking(){
         return;
     }
 }
-
-
-
-
 
 
 
@@ -82,6 +116,8 @@ void Server::clientPrintInfo(struct sockaddr_in* clientAddr, int clientSocket){
     int port = ntohs(clientAddr->sin_port);
 
     _clients[clientSocket] = Client(clientSocket,std::string(ip), port);
+    _clients[clientSocket].setAuth(false);
+
     pollfd newClient;
     newClient.fd = clientSocket;
     newClient.events = POLLIN;
@@ -106,12 +142,14 @@ void Server::setPollFd(){
     pollfd serverPollFd;
     serverPollFd.fd = _serverSocket;
     serverPollFd.events = POLLIN;
-
+    //renevt add
     fds.push_back(serverPollFd);
 }
 
 
 void Server::acceptConnection(){
+
+
     struct sockaddr_in clientAddr;
     socklen_t clientAddrLen = sizeof(clientAddr);
    
@@ -123,64 +161,48 @@ void Server::acceptConnection(){
         }
         return;
     }
-    clientPrintInfo(&clientAddr,clientSocket);
-    
+   
+        
+        clientPrintInfo(&clientAddr,clientSocket);
+
+        
+
     std::cout << "New Connection Accepted. Socket: " << clientSocket << std::endl;
 }
 
 
 void Server::handleClientMessage(int clientSocket){
-    char buffer[1024];
-    ssize_t bytesRead;
-    memset(buffer, 0, sizeof(buffer));
-    bytesRead = read(clientSocket, buffer, sizeof(buffer) - 1);
-
-    if(bytesRead > 0) {
-        std::string message(buffer);
-
-        std::istringstream iss(message);
-        std::cout << iss << std::endl;
-        std::cout << "MESSAGE: "<< message << std::endl;
-        std::cout << "MESSAGE[0]: "<< message[0] << std::endl;
-        std::string prefix, command, params;
-        if( message[0] == ':'){
-            iss >> prefix;
+ 
+    if(!_clients[clientSocket].isAuth()){
+        std::string receivedPass = receiveMessage(clientSocket);
+        if(receivedPass.empty()){
+            closeConnection(clientSocket);
+            return;
         }
-        iss >> command;
-        std::getline(iss,params);
-        if(command == "NICK"){
-            printf("Komut Nıck\n");
-        } else if (command == "USER\n"){
-            printf("Komut USER");
+        if(verifyPassword(receivedPass)){
+            _clients[clientSocket].setAuth(true);
+            sendMessage(clientSocket, "Welcome to the IRC server\r\n");
+        } else {
+            sendMessage(clientSocket, "Invalid Password. Connection Closed!\r\n");
+            closeConnection(clientSocket);
         }
+        return;
     }
-    else if (bytesRead == 0){
-        close(clientSocket);
-        //vectordeki socket silinecek;
-    }
-    else{
-        close(clientSocket);
-        //vectordeki socket silinecek;
-    }
+    //mesaj işleme
 }
 
-
 void Server::run(){
-    
 
-    while (true){
+    SignalHandler::setup();
+    while (SignalHandler::isRunning()){
         int ready = poll(fds.data(),fds.size(), -1);
-
         if(ready == -1){
+            if(errno == EINTR) continue;
             std::cerr << "Poll Failed!" << std::endl;
-            continue;
-        }
-        
-
-        
+            break;
+        }  
         for (size_t i = 0; i < fds.size(); ++i) {
            
-
             if (fds[i].revents & POLLIN) {
                 if (fds[i].fd == _serverSocket) {
                     acceptConnection();
@@ -191,9 +213,18 @@ void Server::run(){
             }
         }
     }
+    
+    std::cout << "Server Shutting Down Succesfully" << std::endl;
 }
 
-
 void Server::closeConnection(int clientSocket){
-
+    close(clientSocket);
+    _clients.erase(clientSocket);
+    //polfd vektördende kaldırılacak.
+    for(size_t i = 0; i < fds.size(); ++i){
+        if(fds[i].fd == clientSocket){
+            fds.erase(fds.begin() + i);
+            break;
+        }
+    }
 }
