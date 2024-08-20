@@ -1,4 +1,6 @@
 #include "../include/Server.hpp"
+#include "../include/Client.hpp"
+
 #define serverIsRunning 1
 
 int main(int argc, char **argv){

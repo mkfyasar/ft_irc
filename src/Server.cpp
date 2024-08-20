@@ -1,4 +1,5 @@
 #include "../include/Server.hpp"
+#include <sstream>
 
 
 Server::Server(int port, const std::string& password) 
@@ -11,61 +12,93 @@ Server::~Server() {
 }
 
 
-void Server::initialize(){
-    initSocket();
-    setPollFd();
-}
+void Server::createSocket(){
 
-void Server::clientPrintInfo(struct sockaddr_in* clientAddr){
-    char ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &(clientAddr->sin_addr),ip, INET_ADDRSTRLEN);
-    int port = ntohs(clientAddr->sin_port);
-
-    printf("Client Ip: %s\n", ip);
-    printf("Client Port = %d\n", port);
-}
-
-void Server::initSocket(){
     //1. Socket Olusturma
-    
-    int socketFd = socket(AF_INET, SOCK_STREAM, 0);
-    if(socketFd == -1){
+     _serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+    if(_serverSocket == -1){
         std::cerr << "Socket Created Failed!" << std::endl;
-        return;
+        return; 
     } 
+}
 
+void Server::configureSocket(){
     //2. Socket Ayarlama /SOL_SOCKET = socket seviysei protokol /SO_REUSEADDR = ayni adres ayni port yeniden kullanim izini
     int opt = 1;
-    if(setsockopt(socketFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0){
+    if(setsockopt(_serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0){
         std::cerr << "Socket Set Failed!" << std::endl;
-        close(socketFd);
+        close(_serverSocket);
         return;
     }
+}
 
+void Server::bindSocket(){
     //3.Soketi adrese ve porta baglama.
     struct sockaddr_in server_addr;
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(_portNumber);
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    if(bind(socketFd, (const sockaddr*)&server_addr, sizeof(server_addr)) < 0){
+    if(bind(_serverSocket, (const sockaddr*)&server_addr, sizeof(server_addr)) < 0){
         std::cerr << "Bind Failed!" << std::endl;
         return;
     }
-    _serverSocket = socketFd;
+}
+
+void Server::listenMode(){
     //4.Socketi Dinleme Moduna Alma
-    if(listen(socketFd,10) < 0){
+    if(listen(_serverSocket,10) < 0){
         std::cerr << "Listen Failed" << std::endl;
-        close(socketFd);
+        close(_serverSocket);
         return;
     }
+}
+
+
+void Server::setNonBlocking(){
     //5.Soketi Bloklanamayan Moda alma
-    int flags = fcntl(socketFd, F_GETFL, 0);
+    int flags = fcntl(_serverSocket, F_GETFL, 0);
     flags |= O_NONBLOCK;
-    if(fcntl(socketFd,F_SETFL,flags) < 0){
+    if(fcntl(_serverSocket,F_SETFL,flags) < 0){
         std::cerr << "Non Block Mode Failed" << std::endl;
         return;
     }
+}
+
+
+
+
+
+
+
+void Server::initialize(){
+    initSocket();
+    setPollFd();
+}
+
+void Server::clientPrintInfo(struct sockaddr_in* clientAddr, int clientSocket){
+    char ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(clientAddr->sin_addr),ip, INET_ADDRSTRLEN);
+    int port = ntohs(clientAddr->sin_port);
+
+    _clients[clientSocket] = Client(clientSocket,std::string(ip), port);
+    pollfd newClient;
+    newClient.fd = clientSocket;
+    newClient.events = POLLIN;
+    fds.push_back(newClient);
+
+    
+}
+
+void Server::initSocket(){
+    
+    createSocket();
+    configureSocket();
+    bindSocket();
+    listenMode();
+    setNonBlocking();
+
+
     std::cout << "Server Initialized and Listening on Port ===> " << _portNumber << std::endl;
 }
 
@@ -84,19 +117,14 @@ void Server::acceptConnection(){
    
     // Yeni Baglanti Kabul Etme
     int clientSocket = accept(_serverSocket, (struct sockaddr*)&clientAddr, &clientAddrLen);
-    clientPrintInfo(&clientAddr);
     if(clientSocket == -1){
         if(errno != EWOULDBLOCK && errno != EAGAIN){
             std::cerr << "Error Accepting Connection "  << std::endl;
         }
         return;
     }
+    clientPrintInfo(&clientAddr,clientSocket);
     
-    pollfd newClient;
-    newClient.fd = clientSocket;
-    newClient.events = POLLIN;
-    fds.push_back(newClient);
-
     std::cout << "New Connection Accepted. Socket: " << clientSocket << std::endl;
 }
 
@@ -104,29 +132,37 @@ void Server::acceptConnection(){
 void Server::handleClientMessage(int clientSocket){
     char buffer[1024];
     ssize_t bytesRead;
-    printf("Handle Client Meaage\n");
     memset(buffer, 0, sizeof(buffer));
     bytesRead = read(clientSocket, buffer, sizeof(buffer) - 1);
-    printf("Bytes Read = %ld\n", bytesRead);
 
     if(bytesRead > 0) {
-        write(clientSocket, buffer, bytesRead);
+        std::string message(buffer);
+
+        std::istringstream iss(message);
+        std::cout << iss << std::endl;
+        std::cout << "MESSAGE: "<< message << std::endl;
+        std::cout << "MESSAGE[0]: "<< message[0] << std::endl;
+        std::string prefix, command, params;
+        if( message[0] == ':'){
+            iss >> prefix;
+        }
+        iss >> command;
+        std::getline(iss,params);
+        if(command == "NICK"){
+            printf("Komut Nıck\n");
+        } else if (command == "USER\n"){
+            printf("Komut USER");
+        }
     }
     else if (bytesRead == 0){
-        printf("Baglanti Kapandi\n");
         close(clientSocket);
         //vectordeki socket silinecek;
     }
     else{
-        printf("Hata Durumu\n");
         close(clientSocket);
         //vectordeki socket silinecek;
     }
 }
-
-
-
-
 
 
 void Server::run(){
@@ -155,4 +191,9 @@ void Server::run(){
             }
         }
     }
+}
+
+
+void Server::closeConnection(int clientSocket){
+
 }
